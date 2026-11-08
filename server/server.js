@@ -5,16 +5,15 @@ const cors = require("cors");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const User = require("./models/User");
-const Product = require("./models/Product");
-const starterProducts = require("./data/products");
 const authRoutes = require("./routes/auth");
 const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
 const adminRoutes = require("./routes/admin");
+const storeRoutes = require("./routes/store");
 
 const app = express();
 app.use(cors({ origin: process.env.CLIENT_URL ? process.env.CLIENT_URL.split(",").map(x => x.trim()) : true }));
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
 app.get("/api/health", (_req, res) => res.json({
@@ -26,6 +25,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/store", storeRoutes);
 app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "../public/index.html")));
 
 async function createAdminIfMissing() {
@@ -55,13 +55,6 @@ async function createAdminIfMissing() {
 }
 
 const PORT = process.env.PORT || 5000;
-async function seedProductsIfEmpty() {
-  if (await Product.countDocuments() === 0) {
-    await Product.insertMany(starterProducts.map(p => ({ ...p, images: p.images || [p.image], stock: 20, sku: p.id.toUpperCase() })));
-    console.log("Starter products imported into MongoDB");
-  }
-}
-
 async function start() {
   if (!process.env.MONGODB_URI) throw new Error("MONGODB_URI is missing. Add your MongoDB Atlas connection string in Render Environment Variables.");
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error("JWT_SECRET is missing or too short. Set a random secret of at least 32 characters in Render Environment Variables.");
@@ -70,7 +63,6 @@ async function start() {
   });
   console.log("MongoDB connected successfully");
   await createAdminIfMissing();
-  await seedProductsIfEmpty();
   app.listen(PORT, () => console.log(`SMART OUTFIT running on port ${PORT}`));
 }
 start().catch(error => {
