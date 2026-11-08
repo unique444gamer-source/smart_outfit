@@ -1,45 +1,23 @@
 const router = require("express").Router();
-const auth = require("../middleware/auth");
-const adminOnly = require("../middleware/admin");
-const User = require("../models/User");
-const Order = require("../models/Order");
-const Product = require("../models/Product");
-const slugify = value => String(value || "product").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") + "-" + Date.now().toString(36);
-const cleanProduct = body => {
-  const images = Array.isArray(body.images) ? body.images : String(body.images || "").split(/\r?\n/);
-  const list = [...new Set(images.map(x => String(x).trim()).filter(Boolean))];
-  const price = Number(body.price), oldPrice = Number(body.oldPrice || body.price || 0);
-  return { name:String(body.name||"").trim(), sku:String(body.sku||"").trim(), category:String(body.category||"").trim(), price, oldPrice, discount:oldPrice > price && oldPrice ? Math.round((oldPrice-price)/oldPrice*100) : 0, sizes:Array.isArray(body.sizes)?body.sizes:String(body.sizes||"").split(",").map(x=>x.trim()).filter(Boolean), colors:Array.isArray(body.colors)?body.colors:String(body.colors||"").split(",").map(x=>x.trim()).filter(Boolean), color:String(body.color||"").trim(), image:String(body.image||list[0]||"").trim(), images:list, description:String(body.description||""), stock:Math.max(0,Number(body.stock||0)), isActive:body.isActive !== false && body.isActive !== "false" };
-};
-router.use(auth, adminOnly);
-router.get("/stats", async (_req,res)=>{
-  try {
-    const [users,orders,revenue,pending] = await Promise.all([
-      User.countDocuments({role:"customer"}), Order.countDocuments(),
-      Order.aggregate([{$match:{status:{$ne:"Cancelled"}}},{$group:{_id:null,total:{$sum:"$total"}}}]),
-      Order.countDocuments({status:"Pending"})
-    ]);
-    res.json({users,orders,revenue:revenue[0]?.total||0,pending,products:await Product.countDocuments()});
-  } catch(e){res.status(500).json({message:"Could not load dashboard."});}
-});
-
-router.get("/products", async (_req,res)=>{ try { res.json(await Product.find().sort({createdAt:-1})); } catch(e){res.status(500).json({message:"Could not load products."});} });
-router.post("/products", async (req,res)=>{ try { const data=cleanProduct(req.body); if(!data.name||!data.category||!Number.isFinite(data.price)||data.price<0||!data.image) return res.status(400).json({message:"Name, category, valid price and primary image are required."}); data.id=slugify(data.name); const product=await Product.create(data); res.status(201).json(product); } catch(e){res.status(400).json({message:e.code===11000?"SKU or product ID already exists.":"Could not create product."});} });
-router.put("/products/:id", async (req,res)=>{ try { const data=cleanProduct(req.body); if(!data.name||!data.category||!Number.isFinite(data.price)||data.price<0||!data.image) return res.status(400).json({message:"Name, category, valid price and primary image are required."}); const product=await Product.findByIdAndUpdate(req.params.id,data,{new:true,runValidators:true}); if(!product)return res.status(404).json({message:"Product not found."}); res.json(product); } catch(e){res.status(400).json({message:"Could not update product."});} });
-router.delete("/products/:id", async (req,res)=>{ try { const product=await Product.findByIdAndDelete(req.params.id); if(!product)return res.status(404).json({message:"Product not found."}); res.json({message:"Product deleted."}); } catch(e){res.status(400).json({message:"Could not delete product."});} });
-
-router.get("/orders", async (_req,res)=>{
-  try { res.json(await Order.find().populate("user","name email").sort({createdAt:-1})); }
-  catch(e){res.status(500).json({message:"Could not load orders."});}
-});
-router.patch("/orders/:id", async (req,res)=>{
-  const allowed=["Pending","Processing","Shipped","Delivered","Cancelled"];
-  if(!allowed.includes(req.body.status)) return res.status(400).json({message:"Invalid order status."});
-  try { const order=await Order.findByIdAndUpdate(req.params.id,{status:req.body.status},{new:true}); if(!order)return res.status(404).json({message:"Order not found."}); res.json(order); }
-  catch(e){res.status(400).json({message:"Could not update order."});}
-});
-router.get("/customers", async (_req,res)=>{
-  try {res.json(await User.find({role:"customer"}).select("name email phone createdAt").sort({createdAt:-1}));}
-  catch(e){res.status(500).json({message:"Could not load customers."});}
-});
+const auth = require("../middleware/auth"); const adminOnly = require("../middleware/admin");
+const User=require("../models/User"), Order=require("../models/Order"), Product=require("../models/Product");
+const multer=require("multer"),path=require("path"),fs=require("fs");
+const uploadDir=path.join(__dirname,"../../public/uploads");fs.mkdirSync(uploadDir,{recursive:true});
+const storage=multer.diskStorage({destination:(_req,_file,cb)=>cb(null,uploadDir),filename:(_req,file,cb)=>cb(null,Date.now()+"-"+Math.round(Math.random()*1e9)+path.extname(file.originalname).toLowerCase())});
+const uploader=multer({storage,limits:{fileSize:5*1024*1024,files:8},fileFilter:(_req,file,cb)=>cb(null,/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype))});
+router.use(auth,adminOnly);
+router.get("/stats",async(_req,res)=>{try{const [users,orders,revenue,pending,products,lowStock]=await Promise.all([User.countDocuments({role:"customer"}),Order.countDocuments(),Order.aggregate([{$match:{status:{$ne:"Cancelled"}}},{$group:{_id:null,total:{$sum:"$total"}}}]),Order.countDocuments({status:"Pending"}),Product.countDocuments(),Product.countDocuments({stock:{$lte:5},status:"Active"})]);res.json({users,orders,revenue:revenue[0]?.total||0,pending,products,lowStock});}catch(e){res.status(500).json({message:"Could not load dashboard."});}});
+router.get("/products",async(req,res)=>{try{const q=(req.query.q||"").trim();const filter=q?{$or:[{name:new RegExp(q,"i")},{sku:new RegExp(q,"i")},{category:new RegExp(q,"i") }]}:{};res.json(await Product.find(filter).sort({updatedAt:-1}).lean());}catch(e){res.status(500).json({message:"Could not load products."});}});
+router.post("/products",async(req,res)=>{try{const body=cleanProduct(req.body);if(!body.id)body.id=slugify(body.name)+"-"+Date.now().toString().slice(-5);const p=await Product.create(body);res.status(201).json(p);}catch(e){res.status(400).json({message:e.code===11000?"This product ID already exists.":e.message||"Could not create product."});}});
+router.put("/products/:id",async(req,res)=>{try{const body=cleanProduct(req.body);delete body.id;const p=await Product.findOneAndUpdate(productFilter(req.params.id),{$set:body},{new:true,runValidators:true});if(!p)return res.status(404).json({message:"Product not found."});res.json(p);}catch(e){res.status(400).json({message:e.message||"Could not update product."});}});
+router.delete("/products/:id",async(req,res)=>{try{const p=await Product.findOneAndDelete(productFilter(req.params.id));if(!p)return res.status(404).json({message:"Product not found."});res.json({success:true});}catch(e){res.status(400).json({message:"Could not delete product."});}});
+router.post("/uploads",(req,res)=>uploader.array("images",8)(req,res,err=>{if(err)return res.status(400).json({message:err.message||"Image upload failed."});res.status(201).json({images:(req.files||[]).map(f=>"/uploads/"+f.filename)});}));
+router.get("/orders",async(_req,res)=>{try{res.json(await Order.find().populate("user","name email").sort({createdAt:-1}));}catch(e){res.status(500).json({message:"Could not load orders."});}});
+router.get("/orders/:id",async(req,res)=>{try{const o=await Order.findById(req.params.id).populate("user","name email");if(!o)return res.status(404).json({message:"Order not found."});res.json(o)}catch(e){res.status(400).json({message:"Invalid order ID."})}});
+router.get("/orders/:id/invoice",async(req,res)=>{try{const PDFDocument=require("pdfkit");const o=await Order.findById(req.params.id).populate("user","name email");if(!o)return res.status(404).json({message:"Order not found."});res.setHeader("Content-Type","application/pdf");res.setHeader("Content-Disposition",`attachment; filename=SMART-OUTFIT-invoice-${String(o._id).slice(-7)}.pdf`);const doc=new PDFDocument({margin:48});doc.pipe(res);doc.fontSize(22).text("SMART OUTFIT",{continued:true}).fontSize(10).text("  |  INVOICE");doc.moveDown().fontSize(10).text("Dress Smart • Live Better").text(`Invoice Date: ${new Date(o.createdAt).toLocaleDateString("en-GB")}`).text(`Order ID: ${String(o._id).toUpperCase()}`);doc.moveDown().fontSize(13).text("BILL TO").fontSize(10).text(o.shipping?.name||o.user?.name||"Customer").text(o.shipping?.phone||"").text(o.shipping?.email||o.user?.email||"").text(o.shipping?.address||"").text(o.shipping?.city||"");doc.moveDown().fontSize(12).text("ORDER ITEMS");doc.moveDown(0.5);(o.items||[]).forEach((it,i)=>{doc.fontSize(9).text(`${i+1}. ${it.name}  |  Qty: ${it.quantity}  |  ${it.size||""} ${it.color||""}  |  BDT ${Number(it.price||0).toFixed(2)}  |  BDT ${(it.price*it.quantity).toFixed(2)}`)});doc.moveDown().fontSize(10).text(`Subtotal: BDT ${Number(o.subtotal||0).toFixed(2)}`,{align:"right"}).text(`Discount: -BDT ${Number(o.discount||0).toFixed(2)}`,{align:"right"}).text(`Delivery: BDT ${Number(o.shippingCharge||0).toFixed(2)}`,{align:"right"}).fontSize(14).text(`TOTAL: BDT ${Number(o.total||0).toFixed(2)}`,{align:"right"});doc.moveDown().fontSize(9).text(`Payment: ${o.paymentMethod||"COD"}    Status: ${o.status||"Pending"}`).moveDown().text("Thank you for shopping with SMART OUTFIT!");doc.end()}catch(e){if(!res.headersSent)res.status(500).json({message:"Could not generate invoice."})}});
+router.patch("/orders/:id",async(req,res)=>{const allowed=["Pending","Processing","Shipped","Delivered","Cancelled"];if(!allowed.includes(req.body.status))return res.status(400).json({message:"Invalid order status."});try{const order=await Order.findByIdAndUpdate(req.params.id,{status:req.body.status},{new:true});if(!order)return res.status(404).json({message:"Order not found."});res.json(order);}catch(e){res.status(400).json({message:"Could not update order."});}});
+router.get("/customers",async(_req,res)=>{try{res.json(await User.find({role:"customer"}).select("name email phone createdAt").sort({createdAt:-1}));}catch(e){res.status(500).json({message:"Could not load customers."});}});
+function productFilter(id){return /^[0-9a-fA-F]{24}$/.test(id)?{_id:id}:{id};}
+function slugify(s){return String(s||"product").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"product";}
+function cleanProduct(b){const images=Array.isArray(b.images)?b.images.filter(x=>typeof x==="string"&&x.trim()).slice(0,20):[];const image=b.image||images[0]||"";if(image&&!images.includes(image))images.unshift(image);return {id:b.id||slugify(b.name),name:String(b.name||"").trim(),slug:slugify(b.name),sku:String(b.sku||"").trim(),category:String(b.category||"Uncategorized").trim(),price:Number(b.price),oldPrice:Number(b.oldPrice||0),discount:Number(b.discount||0),description:String(b.description||""),shortDescription:String(b.shortDescription||""),images,image,sizes:Array.isArray(b.sizes)?b.sizes:[],colors:Array.isArray(b.colors)?b.colors:[],stock:Number(b.stock||0),status:b.status||"Active",featured:!!b.featured};}
 module.exports=router;
