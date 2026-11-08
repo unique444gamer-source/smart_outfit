@@ -40,3 +40,11 @@ After deployment, check `https://YOUR-SERVICE.onrender.com/api/health`. The resp
 - Cash on Delivery demo flow; online payments require a real payment gateway
 
 Never commit `.env` or share database credentials.
+
+## Admin product management
+
+Sign in using the admin account created from `ADMIN_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then open **Admin** from the navigation. Product Management supports creating, editing and deleting products, product SKU/category/pricing/stock, sizes, colors, description, a primary image and multiple additional image URLs. Upload multiple photos directly from your computer or enter image URLs one per line. Uploaded photos are resized/compressed in the browser and stored with the product record in MongoDB; the first/primary image is used in product cards and the detail page shows the gallery thumbnails. Remove an image URL from the list while editing to remove it from the gallery.
+
+Products are stored in MongoDB (not hard-coded in the storefront). On the first startup with an empty products collection, the original demo products are imported once. Later changes are managed from the admin panel.
+
+**Image storage note:** uploaded product images are compressed and stored as data URLs in MongoDB. Keep image sizes reasonable and avoid very large galleries per product because MongoDB documents have a 16 MB size limit. For a large production catalog, move image storage to Cloudinary or S3.
