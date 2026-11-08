@@ -1,34 +1,39 @@
 # SMART OUTFIT
 
-A responsive black-and-white fashion e-commerce starter built with HTML, CSS, vanilla JavaScript, Node.js, Express and MongoDB.
+Responsive fashion e-commerce starter built with HTML, CSS, vanilla JavaScript, Node.js, Express and MongoDB Atlas.
 
-## Run locally
+## Render deployment
 
-1. Install Node.js 18+ and MongoDB.
-2. Copy `.env.example` to `.env` and set `JWT_SECRET` and `MONGODB_URI`.
-3. Run `npm install`.
-4. Run `npm start`.
-5. Open http://localhost:5000
+**Build Command:** `npm install`
 
-The storefront catalog can display without MongoDB. Login, registration, admin access and order persistence require a working MongoDB connection.
+**Start Command:** `npm start`
+
+Add these in Render → your Web Service → Environment:
+
+- `MONGODB_URI`: MongoDB Atlas connection string for database `smart_outfit`
+- `JWT_SECRET`: a random secret of at least 32 characters
+- `CLIENT_URL`: `https://smart-outfit-g4vp.onrender.com`
+- `ADMIN_NAME`: desired admin display name
+- `ADMIN_EMAIL`: desired admin login email
+- `ADMIN_PASSWORD`: strong password of at least 12 characters
+
+The server connects to MongoDB before it starts listening. If MongoDB is unavailable or required secrets are missing, deployment fails visibly instead of serving a storefront with broken authentication. On first successful startup, the admin account is created automatically if it does not already exist. Existing admin passwords are not overwritten on every restart.
+
+After deployment, check `https://YOUR-SERVICE.onrender.com/api/health`. The response should include `"database":"connected"`.
+
+## Local development
+
+1. Install Node.js 18+.
+2. Copy `.env.example` to `.env` and fill in the values.
+3. Run `npm install` then `npm start`.
+4. Open `http://localhost:5000`.
 
 ## Included
 
-- Home, shop, product details, cart, checkout, wishlist, login/register and account views
-- Search, category filters, sorting, size/color selection, quantity changes
-- Cart and wishlist saved in localStorage for guest browsing
-- Express API, MongoDB models, JWT auth, password hashing and order creation
-- Mobile responsive layout and light/dark theme toggle
+- Storefront, product catalog, cart, wishlist, checkout and customer account
+- Register/login using bcrypt password hashing and JWT sessions
+- Admin dashboard protected by database-backed admin role
+- Order creation, order status updates and customer listing
+- Cash on Delivery demo flow; online payments require a real payment gateway
 
-## Demo notes
-
-Create an account to place an order. Configure a real payment gateway before accepting online payments. This starter uses Cash on Delivery and a demo online-payment selection only; it does not collect or process card details.
-
-## Admin panel setup
-
-1. Set `ADMIN_NAME`, `ADMIN_EMAIL`, and a strong `ADMIN_PASSWORD` (12+ characters) in `.env`.
-2. Run `npm run create-admin` once to create/update the admin account.
-3. Start the app and sign in using that admin email/password.
-4. Open `http://localhost:5000/#admin` to access the dashboard.
-
-Admin APIs are protected by JWT authentication and a database-backed admin role. Never expose `.env` or use the example password in production.
+Never commit `.env` or share database credentials.
