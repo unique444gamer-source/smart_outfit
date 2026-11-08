@@ -30,6 +30,9 @@ After deployment, check `https://YOUR-SERVICE.onrender.com/api/health`. The resp
 
 ## Included
 
+- Responsive black-and-white premium storefront inspired by the supplied desktop/mobile UI references
+- Redesigned admin workspace with sales summary, order status controls and customer directory
+- Customer order cards with delivery-status progress tracking
 - Storefront, product catalog, cart, wishlist, checkout and customer account
 - Register/login using bcrypt password hashing and JWT sessions
 - Admin dashboard protected by database-backed admin role
